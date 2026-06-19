@@ -21,12 +21,43 @@ mirror peppi's JSON (`rawReplay`/`rawStart`/`rawPlayer`/`rawMetadata`) — `go v
 Parser chosen: `slp` CLI (peppi-slp), invoked as `slp -s <file>` (skips frames).
 Char/stage stored as **int IDs** (peppi external IDs: Marth=9, Falco=20, stage 28=Dream Land).
 
-**Now (Joey's rep) — 3 sub-steps, currently at START of A:**
-- **A (next up):** From Go, run `slp -s <path>` and print its raw output. Not started yet.
-- **B:** `json.Unmarshal` that output into a `rawReplay`; print to confirm decode works.
-- **C:** map `rawReplay` → clean `Game` (re-add Game/Player structs). That ends Phase 1.
+**Now (Joey's rep) — 3 sub-steps, currently at START of C (modeling):**
+- **A (DONE):** From Go, run `slp -s <path>`, capture `(out, err)`, guard the err,
+  print `string(out)`. Works — raw JSON prints. (Learned: a bad path → `slp` non-zero
+  exit → `.Output()` returns non-nil err → `log.Fatal` fires. Error path verified live.)
+- **B (DONE):** `json.Unmarshal(out, &replay)` into a `rawReplay`; prints correctly.
+  Verified decode: Stage 28 (Dream Land), Players [{9 P1}=Marth, {20 P2}=Falco],
+  LastFrame 10110. (Learned: each fallible call needs its own `err` guard before the
+  next line clobbers `err`; `%+v` prints struct field names.)
+- **C (next up):** map `rawReplay` → clean `Game` (re-add Game/Player structs). That ends Phase 1.
 
 Sample file: `/Users/joeyfarah/Documents/slp replays/Game_20260409T184304.slp`
+
+### ▶▶ RESUME HERE next session — Step C, modeling the `Game` struct
+Pure data-modeling step (Joey's ERD home turf — grill, don't guide). Take the messy
+`rawReplay` (mirrors peppi's JSON) → map into a clean, peppi-decoupled `Game` domain struct.
+Guiding principle: a `Game` is **one flattened in-memory result row, NOT the persisted
+schema**; normalization/lookup tables are a storage-layer concern for later.
+
+Target shape:
+```go
+Game {
+    Stage:    "Dream Land",
+    Duration: 10110,
+    Players:  [ {Char:"Marth", Port:1}, {Char:"Falco", Port:2} ],
+}
+```
+
+Three modeling decisions, taken ONE per turn. **Resume on decision 1 (still open):**
+1. **Char/Stage representation** — (a) `string` names [Claude's rec], (b) `int` IDs,
+   (c) both. Rec = strings because `Game` is a human-facing result row; cost = an
+   ID→name `map[int]string` (Melee char/stage tables — Claude may write that black-box
+   data). Waiting on Joey's instinct given 200k rows + how this data wants to be queried.
+2. One struct or two? (is "player-in-a-game" its own `Player` entity?)
+3. Fixed `P1`/`P2` fields vs a `[]Player` slice? (format allows up to 4 ports)
+
+After struct is settled + reviewed → write the `rawReplay`→`Game` mapping, print with
+`%+v`. That completes Phase 1.
 
 ### Resume notes for Step A (building blocks already explained)
 New imports needed: `"os/exec"`, `"log"` (plus existing `"fmt"`).
