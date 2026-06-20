@@ -14,108 +14,48 @@
 
 ---
 
-## ▶ YOU ARE HERE — Phase 1, step: run `slp` from Go and decode its JSON
+## ✅ PHASE 1 COMPLETE — parse a single `.slp` → clean `Game`
 
-**DONE:** `Game`/`Player` domain structs (built/printed earlier); `raw*` decode structs that
-mirror peppi's JSON (`rawReplay`/`rawStart`/`rawPlayer`/`rawMetadata`) — `go vet` clean.
-Parser chosen: `slp` CLI (peppi-slp), invoked as `slp -s <file>` (skips frames).
-Char/stage stored as **int IDs** (peppi external IDs: Marth=9, Falco=20, stage 28=Dream Land).
+Full pipeline runs end-to-end and `go vet` is clean:
+`slp -s <path>` → JSON bytes → `json.Unmarshal` → `rawReplay` → `toGame()` → `Game`.
+Output verified: `{[{Marth P1} {Falco P2}] Dream Land 10110}`.
 
-**Now (Joey's rep) — 3 sub-steps, currently at START of C (modeling):**
-- **A (DONE):** From Go, run `slp -s <path>`, capture `(out, err)`, guard the err,
-  print `string(out)`. Works — raw JSON prints. (Learned: a bad path → `slp` non-zero
-  exit → `.Output()` returns non-nil err → `log.Fatal` fires. Error path verified live.)
-- **B (DONE):** `json.Unmarshal(out, &replay)` into a `rawReplay`; prints correctly.
-  Verified decode: Stage 28 (Dream Land), Players [{9 P1}=Marth, {20 P2}=Falco],
-  LastFrame 10110. (Learned: each fallible call needs its own `err` guard before the
-  next line clobbers `err`; `%+v` prints struct field names.)
-- **C (next up):** map `rawReplay` → clean `Game` (re-add Game/Player structs). That ends Phase 1.
+**What got built (all in `main.go`):**
+- `raw*` decode structs mirroring peppi's JSON (`rawReplay/rawStart/rawPlayer/rawMetadata`).
+- Clean domain structs `Game{Players []Player, Stage string, Duration int}` +
+  `Player{Character string, Port string}`.
+- `stageNames` + `characterNames` `map[int]string` lookup tables (Claude-provided data).
+- `toGame(replay rawReplay) Game` — the anti-corruption seam: range over players,
+  id→name map lookups, `append` into a `[]Player`, assemble the `Game`.
 
-Sample file: `/Users/joeyfarah/Documents/slp replays/Game_20260409T184304.slp`
+**Modeling decisions locked (Phase 2 may revisit at the storage layer):**
+1. Char/Stage as **resolved `string` names** — `Game` is a post-join *result row*, NOT
+   the persisted base table. Normalized `stages`/`characters` tables belong to Phase 2.
+2. Separate **`Player` struct** (repeating group → its own entity).
+3. **`[]Player` slice** (format allows up to 4 ports; singles = `len == 2`).
+4. Unknown-id handling: **trust ids for now** (inline lookups, no comma-ok). Revisit at scale.
 
-### ▶▶ RESUME HERE next session — Step C, modeling the `Game` struct
-Pure data-modeling step (Joey's ERD home turf — grill, don't guide). Take the messy
-`rawReplay` (mirrors peppi's JSON) → map into a clean, peppi-decoupled `Game` domain struct.
-Guiding principle: a `Game` is **one flattened in-memory result row, NOT the persisted
-schema**; normalization/lookup tables are a storage-layer concern for later.
+**Quiz passed (Joey explained back, in his own words):**
+- Two struct families = peppi's model vs ours; `toGame` is the wall (decoupling/fit).
+  Decode happens at `Unmarshal` (line 94); *translate* happens at `toGame` (line 103).
+- `range` yields (index, element); `rp` is the element, `_` discards the index (slots
+  are positional — first is always index).
+- `append` returns a new slice you MUST reassign — a slice is a {ptr,len,cap} header;
+  a full backing array forces a realloc to a new address. (JS `push` mutates in place; Go doesn't.)
 
-Target shape:
-```go
-Game {
-    Stage:    "Dream Land",
-    Duration: 10110,
-    Players:  [ {Char:"Marth", Port:1}, {Char:"Falco", Port:2} ],
-}
-```
+### ▶▶ RESUME HERE — Phase 2 (naive flat-file ingest)
+Next phase: ingest ALL ~200k replays into a flat file and read them back (the deliberate
+"feel the pain" detour before real pages/pager in Phase 3). NOT started — design first,
+grill before code. Joey still writes the core; Claude may write the `.slp`-batch glue.
+Open Q to grill first: serialization format for the flat file (JSON-lines? fixed-width?
+length-prefixed?) and what "read back" needs to support.
 
-Three modeling decisions — **ALL SETTLED:**
-1. **Char/Stage representation — `string` names.** `Game` is a *result row* (post-join),
-   NOT the persisted base table. Joey's normalized `stages(id,name)` / `characters`
-   lookup tables are correct — but they belong to the Phase 2 storage schema. The
-   `map[int]string` is the in-memory stand-in that "joins" id→name when building a
-   `Game`. (Key distinction drilled: result row vs base table.)
-2. **One struct or two — separate `Player` struct.** Player-in-a-game is a repeating
-   group + coherent entity → its own struct (the normalized-vs-denormalized teaching point).
-3. **`[]Player` slice (not fixed P1/P2).** Format allows up to 4 ports; count lives in
-   the data, not the type. Singles = `len(Players) == 2`.
+### Go habits worth keeping
+- Run `go vet ./...` alongside `go run .` (it caught an unexported-field bug early).
+- THE Go error idiom: `if err != nil { log.Fatal(err) }` — value, not exceptions;
+  each fallible call gets its own guard before the next line clobbers `err`.
 
-Resulting target shape:
-```go
-type Player struct { Char string; Port int }
-type Game   struct { Stage string; Duration int; Players []Player }
-```
-
-**DONE:** `Game{Players, Stage, Duration}` + `Player{Character, Port}` structs declared.
-`stageNames` + `characterNames` `map[int]string` lookup tables in place (Claude-provided
-black-box data; 6 legal stages + 26 chars, verified vs decoded replay).
-
-**▶ Joey's rep IN PROGRESS (Claude must NOT write this):** the `rawReplay`→`Game` mapping,
-written as a func `toGame(replay rawReplay) Game`. **Resume mid-way through this.**
-
-Decisions already made this session:
-- **Unknown-id handling: TRUST the ids for now** — inline the map lookups, NO comma-ok.
-  (`Stage: stageNames[replay.Start.Stage]` straight into the `Game{}` literal.)
-- The two easy fields: `Stage` = `stageNames[replay.Start.Stage]`,
-  `Duration` = `replay.Metadata.LastFrame` (direct copy).
-
-**The hard part Joey was on — the player loop** (turn `[]rawPlayer` → `[]Player`).
-Pattern already explained to him (range + append + map lookup all at once — he found this
-the trickiest bit, stopped here to sleep):
-```go
-var players []Player
-for _, rp := range replay.Start.Players {
-    p := Player{
-        Character: characterNames[rp.Character], // id→name
-        Port:      rp.Port,                       // straight copy, both strings
-    }
-    players = append(players, p) // MUST reassign — append may move the slice
-}
-```
-New Go concepts in play: func signature (param in / return after parens); `range` yields
-(index, element) → `_, rp` discards index; `append` returns a new slice you must capture.
-
-**Remaining to finish Phase 1:**
-1. Finish `toGame`: the loop above + `return Game{Stage:…, Duration:…, Players: players}`.
-2. In `main`, replace `fmt.Println(replay)` with `fmt.Printf("%+v\n", toGame(replay))`.
-3. Run, confirm clean `Game` prints (expect: Stage "Dream Land", Duration 10110,
-   Players [{Marth …},{Falco …}]). Then run `go vet ./...`. → Phase 1 COMPLETE.
-
-### Resume notes for Step A (building blocks already explained)
-New imports needed: `"os/exec"`, `"log"` (plus existing `"fmt"`).
-1. Run a command: `out, err := exec.Command("slp", "-s", path).Output()`
-   — `out` is stdout as `[]byte`; args bypass the shell, so the space in the path is fine.
-2. Go error idiom (THE core pattern — value, not exceptions):
-   `if err != nil { log.Fatal(err) }`
-3. Print bytes as text: `fmt.Println(string(out))`
-Task: in `main()`, set `path`, run `slp -s`, handle err, print raw output.
-
-### Current `main.go` state
-- `raw*` decode structs done + `go vet` clean.
-- `func main()` is just `fmt.Println()` (blank) — replace its body in Step A.
-- Domain `Game`/`Player` structs were removed earlier; re-add them in Step C for mapping.
-- Habit to keep: run `go vet ./...` alongside `go run .` (it caught the unexported-field bug).
-
-**Done so far**
+**Phase 1 environment notes**
 - Go installed: `go 1.26.4 darwin/amd64`. Module: `github.com/Joey-Farah/rslp`.
 - Joey learned (and explained back correctly): Go's package model — a *directory* is the
   unit of compilation, all `.go` files share a namespace, so two `func main()` collide.

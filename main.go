@@ -101,16 +101,21 @@ func main() {
 
 // parse replays
 func toGame(replay rawReplay) Game {
-	var players Player[]
+	var players []Player
+	// go loops only have the for keyword and each slice of a loop produces TWO values, the index AND the element. We're gonna use i for index and rp for the element
+	// if you dont have a need for the index, you can supply a _ instead
 	for _, rp := range replay.Start.Players {
-		p := Player {
-			
+		p := Player{
+			Character: characterNames[rp.Character],
+			Port:      rp.Port,
 		}
+		players = append(players, p)
 	}
+
 	return Game{
+		Players:  players,
 		Stage:    stageNames[replay.Start.Stage],
 		Duration: replay.Metadata.LastFrame,
 	}
 
-	// Players
 }
