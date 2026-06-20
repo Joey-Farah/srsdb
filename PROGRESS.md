@@ -48,16 +48,57 @@ Game {
 }
 ```
 
-Three modeling decisions, taken ONE per turn. **Resume on decision 1 (still open):**
-1. **Char/Stage representation** — (a) `string` names [Claude's rec], (b) `int` IDs,
-   (c) both. Rec = strings because `Game` is a human-facing result row; cost = an
-   ID→name `map[int]string` (Melee char/stage tables — Claude may write that black-box
-   data). Waiting on Joey's instinct given 200k rows + how this data wants to be queried.
-2. One struct or two? (is "player-in-a-game" its own `Player` entity?)
-3. Fixed `P1`/`P2` fields vs a `[]Player` slice? (format allows up to 4 ports)
+Three modeling decisions — **ALL SETTLED:**
+1. **Char/Stage representation — `string` names.** `Game` is a *result row* (post-join),
+   NOT the persisted base table. Joey's normalized `stages(id,name)` / `characters`
+   lookup tables are correct — but they belong to the Phase 2 storage schema. The
+   `map[int]string` is the in-memory stand-in that "joins" id→name when building a
+   `Game`. (Key distinction drilled: result row vs base table.)
+2. **One struct or two — separate `Player` struct.** Player-in-a-game is a repeating
+   group + coherent entity → its own struct (the normalized-vs-denormalized teaching point).
+3. **`[]Player` slice (not fixed P1/P2).** Format allows up to 4 ports; count lives in
+   the data, not the type. Singles = `len(Players) == 2`.
 
-After struct is settled + reviewed → write the `rawReplay`→`Game` mapping, print with
-`%+v`. That completes Phase 1.
+Resulting target shape:
+```go
+type Player struct { Char string; Port int }
+type Game   struct { Stage string; Duration int; Players []Player }
+```
+
+**DONE:** `Game{Players, Stage, Duration}` + `Player{Character, Port}` structs declared.
+`stageNames` + `characterNames` `map[int]string` lookup tables in place (Claude-provided
+black-box data; 6 legal stages + 26 chars, verified vs decoded replay).
+
+**▶ Joey's rep IN PROGRESS (Claude must NOT write this):** the `rawReplay`→`Game` mapping,
+written as a func `toGame(replay rawReplay) Game`. **Resume mid-way through this.**
+
+Decisions already made this session:
+- **Unknown-id handling: TRUST the ids for now** — inline the map lookups, NO comma-ok.
+  (`Stage: stageNames[replay.Start.Stage]` straight into the `Game{}` literal.)
+- The two easy fields: `Stage` = `stageNames[replay.Start.Stage]`,
+  `Duration` = `replay.Metadata.LastFrame` (direct copy).
+
+**The hard part Joey was on — the player loop** (turn `[]rawPlayer` → `[]Player`).
+Pattern already explained to him (range + append + map lookup all at once — he found this
+the trickiest bit, stopped here to sleep):
+```go
+var players []Player
+for _, rp := range replay.Start.Players {
+    p := Player{
+        Character: characterNames[rp.Character], // id→name
+        Port:      rp.Port,                       // straight copy, both strings
+    }
+    players = append(players, p) // MUST reassign — append may move the slice
+}
+```
+New Go concepts in play: func signature (param in / return after parens); `range` yields
+(index, element) → `_, rp` discards index; `append` returns a new slice you must capture.
+
+**Remaining to finish Phase 1:**
+1. Finish `toGame`: the loop above + `return Game{Stage:…, Duration:…, Players: players}`.
+2. In `main`, replace `fmt.Println(replay)` with `fmt.Printf("%+v\n", toGame(replay))`.
+3. Run, confirm clean `Game` prints (expect: Stage "Dream Land", Duration 10110,
+   Players [{Marth …},{Falco …}]). Then run `go vet ./...`. → Phase 1 COMPLETE.
 
 ### Resume notes for Step A (building blocks already explained)
 New imports needed: `"os/exec"`, `"log"` (plus existing `"fmt"`).

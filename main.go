@@ -9,9 +9,8 @@ import (
 
 // type struct declarations
 
-type rawStart struct {
-	Stage   int         `json:"stage"`
-	Players []rawPlayer `json:"players"`
+type rawMetadata struct {
+	LastFrame int `json:"lastFrame"`
 }
 
 type rawPlayer struct {
@@ -19,8 +18,9 @@ type rawPlayer struct {
 	Port      string `json:"port"`
 }
 
-type rawMetadata struct {
-	LastFrame int `json:"lastFrame"`
+type rawStart struct {
+	Stage   int         `json:"stage"`
+	Players []rawPlayer `json:"players"`
 }
 
 type rawReplay struct {
@@ -28,11 +28,61 @@ type rawReplay struct {
 	Metadata rawMetadata `json:"metadata"`
 }
 
+type Player struct {
+	Character string
+	Port      string
+}
+
+type Game struct {
+	Players  []Player
+	Stage    string
+	Duration int
+}
+
+// replays
 var slpPath = "/Users/joeyfarah/Documents/slp replays/Game_20260409T184304.slp"
-
 var replay rawReplay
-
 var replayPointer = &replay
+
+// stage map
+var stageNames = map[int]string{
+	2:  "Fountain of Dreams",
+	3:  "Pokémon Stadium",
+	8:  "Yoshi's Story",
+	28: "Dream Land",
+	31: "Battlefield",
+	32: "Final Destination",
+}
+
+// character map
+var characterNames = map[int]string{
+	0:  "Captain Falcon",
+	1:  "Donkey Kong",
+	2:  "Fox",
+	3:  "Mr. Game & Watch",
+	4:  "Kirby",
+	5:  "Bowser",
+	6:  "Link",
+	7:  "Luigi",
+	8:  "Mario",
+	9:  "Marth",
+	10: "Mewtwo",
+	11: "Ness",
+	12: "Peach",
+	13: "Pikachu",
+	14: "Ice Climbers",
+	15: "Jigglypuff",
+	16: "Samus",
+	17: "Yoshi",
+	18: "Zelda",
+	19: "Sheik",
+	20: "Falco",
+	21: "Young Link",
+	22: "Dr. Mario",
+	23: "Roy",
+	24: "Pichu",
+	25: "Ganondorf",
+}
 
 // main
 func main() {
@@ -46,5 +96,21 @@ func main() {
 		log.Fatal(err)
 	}
 	// outString := string(out)
-	fmt.Println(replay)
+	fmt.Println(toGame(replay))
+}
+
+// parse replays
+func toGame(replay rawReplay) Game {
+	var players Player[]
+	for _, rp := range replay.Start.Players {
+		p := Player {
+			
+		}
+	}
+	return Game{
+		Stage:    stageNames[replay.Start.Stage],
+		Duration: replay.Metadata.LastFrame,
+	}
+
+	// Players
 }
