@@ -43,12 +43,32 @@ Output verified: `{[{Marth P1} {Falco P2}] Dream Land 10110}`.
 - `append` returns a new slice you MUST reassign — a slice is a {ptr,len,cap} header;
   a full backing array forces a realloc to a new address. (JS `push` mutates in place; Go doesn't.)
 
-### ▶▶ RESUME HERE — Phase 2 (naive flat-file ingest)
-Next phase: ingest ALL ~200k replays into a flat file and read them back (the deliberate
-"feel the pain" detour before real pages/pager in Phase 3). NOT started — design first,
-grill before code. Joey still writes the core; Claude may write the `.slp`-batch glue.
-Open Q to grill first: serialization format for the flat file (JSON-lines? fixed-width?
-length-prefixed?) and what "read back" needs to support.
+### ▶▶ RESUME HERE — Phase 2 (SHRUNK flat-file detour — Joey writes ALL of it)
+Deliberately lean "feel the pain" detour before the Phase 3 pager. **Joey writes every
+line** (he wants ownership of all final-project code; glue included). Decided scope:
+- **Format: JSON-lines** (`encoding/json`, one `Game` per line). File: `data/games.jsonl`.
+- **Record: denormalized** whole `Game` per line (players embedded) — naive baseline.
+- **Scale: small subset (~100–500 files), NOT all 200k** — feel the pain, don't grind.
+- Most of Phase 2 is **throwaway** (replaced by pages in Ph3 / B+tree in Ph4); the
+  surviving part is the ingestion glue (walk dir → `slp` → `Game`). Value here = gentle
+  on-ramp to Go file I/O before the pager. Joey's SQL background already knows *why*
+  scans hurt, so keep it short.
+
+Three thin slices, each demoable:
+1. **Write** — start with a tracer bullet: marshal the ONE existing `Game` to JSON
+   (`json.Marshal`, the mirror of `Unmarshal`) and write to `data/games.jsonl`. Then scale
+   to a directory walk (`os.ReadDir`) over a subset, appending one JSON line per `Game`.
+2. **Read** — open the file, decode each line back into a `Game`.
+3. **"Query"** — scan all decoded games, filter/count one thing (e.g. Marth games) → feel O(n).
+
+**▶ Next rep (building blocks already given to Joey):** Slice 1 tracer bullet — serialize
+the ONE existing `Game` to disk before scaling.
+1. Capture the result in a var: `game := toGame(replay)` (currently `main` prints it inline
+   without keeping it — needs a variable).
+2. `data, err := json.Marshal(game)` — mirror of `Unmarshal`; struct → `[]byte`. Guard err.
+3. `err = os.WriteFile("data/games.jsonl", data, 0644)` — guard err. (`0644` = Unix perms;
+   may need to `mkdir data` first. New import: `"os"`.)
+4. Verify with `cat data/games.jsonl`. Then scale to the directory walk (Slice 1 step 2).
 
 ### Go habits worth keeping
 - Run `go vet ./...` alongside `go run .` (it caught an unexported-field bug early).
