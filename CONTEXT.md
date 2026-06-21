@@ -15,6 +15,18 @@ data to answer questions the SRS UI doesn't surface. This makes the schema (Phas
 SQL layer (Phase 6) the real deliverables, and means rslp's data should mirror SRS's facts.
 (Still learning-first — this is the destination, not a reason to skip ahead.)
 
+**Longer-term aspiration (Joey, 2026-06):** make the database **publicly accessible** —
+others can query it over a network. **Scope clarified: READ-ONLY.** No public inserts —
+so the lighter fork: a hosted query endpoint, no concurrent-write contention, no multi-
+tenant writes. Still adds a network/server layer (and likely some auth/rate-limiting), but
+avoids the heavy concurrency-control problems. Revisit after the engine core (Phases 3–6).
+- **Stretch idea (future maybe):** let users upload their own `.slp` replays, parse them
+  into the DB, and query them. This *would* reintroduce a write path — park it for now.
+
+**Overall purpose (reaffirmed):** (1) *learn* how databases work, and (2) produce a
+**resume/portfolio** project. Implication: keep it presentable and well-documented — the
+artifact's clarity and the demonstrated understanding matter, not just that it runs.
+
 ## Who Joey is
 Self-taught dev with deep **Oracle Cloud / SQL** experience (relational, transactional,
 ERD modeling), no formal CS training, and **brand new to Go**. Goal is understanding, not

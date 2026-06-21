@@ -2,9 +2,11 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"log"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 )
 
 // type struct declarations
@@ -40,9 +42,12 @@ type Game struct {
 }
 
 // replays
-var slpPath = "/Users/joeyfarah/Documents/slp replays/Game_20260409T184304.slp"
-var replay rawReplay
-var replayPointer = &replay
+var slpPath = ""
+
+// /Users/joeyfarah/Documents/slp replays/Game_20260409T184304.slp
+
+var directoryPath = "/Users/joeyfarah/Documents/slp replays"
+var fileWriteLines []string
 
 // stage map
 var stageNames = map[int]string{
@@ -86,17 +91,45 @@ var characterNames = map[int]string{
 
 // main
 func main() {
-	out, err := exec.Command("slp", "-s", slpPath).Output()
+
+	entries, err := os.ReadDir(directoryPath)
 	if err != nil {
 		log.Fatal(err)
+	}
+	for _, entry := range entries {
+
+		file := entry.Name()
+		fullFilePath := filepath.Join(directoryPath, file)
+
+		out, err := exec.Command("slp", "-s", fullFilePath).Output()
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		var replay rawReplay
+		replayPointer := &replay
+
+		err = json.Unmarshal(out, replayPointer)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		game := (toGame(replay))
+		data, err := json.Marshal(game)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		fileWriteLines = append(fileWriteLines, (string(data)))
 	}
 
-	err = json.Unmarshal(out, replayPointer)
+	linesList := strings.Join(fileWriteLines, "\n")
+	// WriteFile(path, bytes, perm): writes data to disk, creating/overwriting the file.
+	// 0644 = owner read+write, others read-only. Returns only an error (data goes IN).
+	err = os.WriteFile("data/games.jsonl", []byte(linesList), 0644)
 	if err != nil {
 		log.Fatal(err)
 	}
-	// outString := string(out)
-	fmt.Println(toGame(replay))
 }
 
 // parse replays

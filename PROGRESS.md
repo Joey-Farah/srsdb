@@ -61,14 +61,29 @@ Three thin slices, each demoable:
 2. **Read** — open the file, decode each line back into a `Game`.
 3. **"Query"** — scan all decoded games, filter/count one thing (e.g. Marth games) → feel O(n).
 
-**▶ Next rep (building blocks already given to Joey):** Slice 1 tracer bullet — serialize
-the ONE existing `Game` to disk before scaling.
-1. Capture the result in a var: `game := toGame(replay)` (currently `main` prints it inline
-   without keeping it — needs a variable).
-2. `data, err := json.Marshal(game)` — mirror of `Unmarshal`; struct → `[]byte`. Guard err.
-3. `err = os.WriteFile("data/games.jsonl", data, 0644)` — guard err. (`0644` = Unix perms;
-   may need to `mkdir data` first. New import: `"os"`.)
-4. Verify with `cat data/games.jsonl`. Then scale to the directory walk (Slice 1 step 2).
+**Slice 1 step 1 — tracer bullet DONE.** One `Game` → `json.Marshal` → `os.WriteFile`
+→ `data/games.jsonl`, verified on disk (`{"Players":[...],"Stage":"Dream Land",...}`).
+Learned: `Marshal` is the mirror of `Unmarshal` (struct→bytes); `data` is an INPUT to
+`WriteFile`, which returns only `err`; `0644` octal → `-rw-r--r--`; no `json` tags on
+`Game`/`Player` so keys come out Capitalized (fine — only our code reads it back); WriteFile
+TRUNCATES+overwrites (must switch to append when scaling).
+
+**Slice 1 — DONE (write/ingest).** Directory walk over `~/Documents/slp replays/` (708
+files) → per-file pipeline (`os.ReadDir` → `filepath.Join` → `slp -s` → `Unmarshal` into a
+LOCAL `rawReplay` → `toGame` → `Marshal`) → `append` each JSON to `fileWriteLines []string`
+→ after loop `strings.Join(…, "\n")` + one `os.WriteFile`. `go vet` clean.
+Learned/observed:
+- `os.ReadDir` → `[]os.DirEntry`; `entry.Name()` is filename only → `filepath.Join` for full path.
+- Accumulate-in-slice then write-once (chose this over append-mode for simplicity).
+- `strings.Join` separates (no trailing `\n`) → `wc -l` shows 707 for 708 games (correct).
+- **FELT THE PAIN:** 708 files = ~4.6s, dominated by 708 `slp` subprocess spawns
+  (2.16s user + 1.97s sys, NOT Go code). Extrapolates to ~22 min for 200k. Real scaling wall.
+
+**▶ Next rep — Slice 2 (read back) + Slice 3 (query).**
+- Slice 2: read `data/games.jsonl`, split on `\n`, `json.Unmarshal` each line back into a
+  `Game`, collect into `[]Game`. (Reverse of Slice 1.) Confirm 708 games read.
+- Slice 3: scan the `[]Game`, filter/count ONE thing (e.g. Marth games) → FEEL the O(n)
+  full scan that motivates Phase 4's B+tree index. That closes Phase 2 → on to Phase 3 (pager).
 
 ### Go habits worth keeping
 - Run `go vet ./...` alongside `go run .` (it caught an unexported-field bug early).
