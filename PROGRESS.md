@@ -4,13 +4,30 @@
 > This file tracks **where we are**. Update the "YOU ARE HERE" marker as we move.
 
 ## Roadmap (one phase at a time — do not jump ahead)
-1. **Scaffold + parse a single `.slp` file into structured Go fields.**  ← current phase
-2. Define table schema; naively ingest all replays into a flat file; read back.
+1. **Scaffold + parse a single `.slp` file into structured Go fields.**
+2. Define table schema; naively ingest all replays into a flat file; read back.  ← current phase
 3. Storage layer: fixed-size pages + a pager that reads/writes pages on demand.
 4. B+tree index on top of the pager.
 5. Execution operators: scan, filter (WHERE), aggregate (GROUP BY/COUNT/AVG); one query end-to-end.
 6. SQL parser (recursive descent) → AST → query plan from the operators.
 7. (Optional) Make analytical queries fast — columnar storage / zone maps (OLTP vs OLAP).
+
+## Overall progress — ~15% (effort-weighted; excludes optional Ph7)
+Phases are NOT equal size — the engine core (Ph3–6) is the bulk. Weighting reflects that.
+
+| Phase | Weight | Status | Done |
+|---|---|---|---|
+| Ph1 parse `.slp` → `Game` | 8% | ✅ complete | 8% |
+| Ph2 flat-file ingest + read-back | 7% | ✅ complete | 7% |
+| Ph3 pages + pager | 20% | ⬜ not started | 0% |
+| Ph4 B+tree | 25% | ⬜ not started | 0% |
+| Ph5 operators | 18% | ⬜ not started | 0% |
+| Ph6 SQL parser → plan | 22% | ⬜ not started | 0% |
+| **Total** | **100%** | | **~15%** |
+
+> Update the % and status as phases close. The weighting is a rough planning estimate,
+> not a precise measure — the point is to see the engine core (Ph3–6, 85% of the work) is
+> still ahead.
 
 ---
 
@@ -79,11 +96,20 @@ Learned/observed:
 - **FELT THE PAIN:** 708 files = ~4.6s, dominated by 708 `slp` subprocess spawns
   (2.16s user + 1.97s sys, NOT Go code). Extrapolates to ~22 min for 200k. Real scaling wall.
 
-**▶ Next rep — Slice 2 (read back) + Slice 3 (query).**
-- Slice 2: read `data/games.jsonl`, split on `\n`, `json.Unmarshal` each line back into a
-  `Game`, collect into `[]Game`. (Reverse of Slice 1.) Confirm 708 games read.
-- Slice 3: scan the `[]Game`, filter/count ONE thing (e.g. Marth games) → FEEL the O(n)
-  full scan that motivates Phase 4's B+tree index. That closes Phase 2 → on to Phase 3 (pager).
+**Slice 2 — DONE (read back).** `os.ReadFile` → `strings.Split(…, "\n")` → loop
+`json.Unmarshal([]byte(line), &game)` → `append` into `[]Game`. Confirmed 708 games read.
+Deep-dived (Joey explained back correctly): bytes↔string conversions = API choice
+(`strings.Split` vs `bytes.Split`), not necessity; `Marshal`=encode struct→text (storable),
+`Unmarshal`=decode text→struct (queryable); pipeline crosses the text↔struct boundary 3×
+(decode slp output → transform via toGame → encode to disk → later decode from disk);
+pointer needed only when a func MUTATES your var (`*Type` param defined by author, `&var` at
+call) — `Unmarshal`'s param is `any` so caller only writes `&`.
+
+**▶ Next rep — Slice 3 (the query / the payoff). CLOSES PHASE 2.**
+Scan the `[]Game`, filter/count ONE thing (e.g. count Marth games): a `for range` over all
+708 with an `if` + counter. The point is to FEEL the O(n) full scan — every query reads
+EVERY record, no shortcuts — which is exactly the pain Phase 4's B+tree index removes.
+After this: quiz on Phase 2, then commit + move to Phase 3 (pages + pager).
 
 ### Go habits worth keeping
 - Run `go vet ./...` alongside `go run .` (it caught an unexported-field bug early).

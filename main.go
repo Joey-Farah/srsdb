@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"os/exec"
@@ -130,6 +131,34 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	content, err := os.ReadFile("data/games.jsonl")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	lines := strings.Split(string(content), "\n")
+
+	var games []Game
+	for _, line := range lines {
+		var game Game
+		err = json.Unmarshal([]byte(line), &game)
+		if err != nil {
+			log.Fatal(err)
+		}
+		games = append(games, game)
+	}
+	fmt.Println(len(games))
+	falcoCount := 0
+	for _, game := range games {
+		for _, char := range game.Players {
+			if char.Character == "Falco" {
+				falcoCount++
+				break
+			}
+		}
+	}
+	fmt.Println(falcoCount, "games")
 }
 
 // parse replays
