@@ -19,7 +19,7 @@ Phases are NOT equal size — the engine core (Ph3–6) is the bulk. Weighting r
 |---|---|---|---|
 | Ph1 parse `.slp` → `Game` | 8% | ✅ complete | 8% |
 | Ph2 flat-file ingest + read-back | 7% | ✅ complete | 7% |
-| Ph3 pages + pager | 20% | ⬜ not started | 0% |
+| Ph3 pages + pager | 20% | 🟡 design in progress | 0% |
 | Ph4 B+tree | 25% | ⬜ not started | 0% |
 | Ph5 operators | 18% | ⬜ not started | 0% |
 | Ph6 SQL parser → plan | 22% | ⬜ not started | 0% |
@@ -28,6 +28,67 @@ Phases are NOT equal size — the engine core (Ph3–6) is the bulk. Weighting r
 > Update the % and status as phases close. The weighting is a rough planning estimate,
 > not a precise measure — the point is to see the engine core (Ph3–6, 85% of the work) is
 > still ahead.
+
+---
+
+## 🟡 PHASE 3 — pages + pager (DESIGN GRILLING IN PROGRESS — no code yet)
+
+The real start of the engine. Replaces the throwaway `data/games.jsonl` flat file with a
+proper storage layer. **Joey writes the pager** (explicitly his — off-limits for Claude).
+
+### Design locked so far (Joey reasoned each out, in his own words)
+- **Why fixed-size pages:** variable-length records (JSON lines of differing byte length)
+  have no predictable position → finding record #k forces a full scan. Fix: carve the file
+  into equal **4096-byte pages**; page #k lives at byte offset **`k × 4096`** → `seek`
+  straight to it, O(1), no scan. Traded variable-length *records* for fixed-length *pages*.
+- **Slotted page (what's inside a page):** records pack in from one end; a **slot directory**
+  grows from the other end. Each slot = **(byte offset, length)** of one record. Slots are
+  fixed-size → randomly addressable (same trick, one level down). Lets a record move within
+  the page without anything outside caring; slot number = stable address. (Joey's own
+  intuition reached for this — "mini page-like structures within each page.")
+- **Pager is dumb about games:** it moves raw bytes in fixed blocks; knows nothing about
+  `Game`/players/stages. Layering — the slotted-page / B+tree layers sit *on top* and decide
+  record meaning. Keeps the pager reusable (index pages, free-space maps, etc.).
+- **Start cache-less:** v1 pager hits disk every `ReadPage`/`WritePage`. Add the buffer-pool
+  cache (page# → in-memory page) LATER. Tracer bullet first: write known bytes to page k,
+  read page k back, assert equal.
+
+### Code-org decision (done)
+- New **`storage/` package** for the pager (`storage/pager.go`, `package storage`). The pager
+  is a *deep module*: tiny surface (`Open`/`ReadPage`/`WritePage`), growing hidden complexity
+  (file handle → cache → free list). First real package boundary in the project.
+- Import from `main.go` as `import "github.com/Joey-Farah/rslp/storage"` → call
+  `storage.ReadPage(...)`. **Currently commented out** (Go errors on unused imports until
+  there's something to call).
+- **Skip** splitting `game.go` out of `main.go` — that's throwaway Phase 2 code, not worth it.
+- Go lessons covered: import path = module path + dir (absolute, never relative; no bare
+  `"storage"`); import path resolves from the **local filesystem**, the `github.com/...` name
+  is just a label (only matters if someone `go get`s it — repo is `srsdb` yet module is
+  `…/rslp` and it builds fine); package *name* (`package storage`) ≠ filename (`pager.go`);
+  exported = Capitalized.
+
+### ▶▶ RESUME HERE — pager interface shape (one open question)
+Mid-grill on the pager's interface. Two shapes presented:
+- **A:** free funcs, pass the file each call — `ReadPage(f *os.File, k int)`. (rejected: every
+  future feature grows every param list)
+- **B (recommended):** a `Pager` **struct that owns the `*os.File`**, with methods +
+  constructor:
+  ```go
+  type Pager struct { file *os.File }
+  func Open(path string) (*Pager, error)
+  func (p *Pager) ReadPage(k int) []byte
+  func (p *Pager) WritePage(k int, data []byte) error
+  ```
+  Why the struct: the file handle is owned state; future state (cache, page count, free list)
+  becomes more struct fields, not more params. Idiomatic "thing that owns a resource" (mirrors
+  `os.File`). The deep-module shape from Joey's operating manual.
+
+**Open question to answer on return:** does Joey agree with the struct shape, and does he get
+*why the file handle lives inside the struct* rather than being passed each call?
+
+**Then, in order:** spec exact types (a `PageSize = 4096` const; a page = `[]byte` len 4096)
+→ Joey writes `Open` as the tracer bullet → round-trip test in `storage/pager_test.go`
+(write known bytes to page k, read back, assert equal) → only then add the cache.
 
 ---
 
