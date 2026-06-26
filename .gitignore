@@ -6,3 +6,6 @@ data/
 *.exe
 *.test
 *.out
+
+# Root build artifacts (regenerable via `go build`)
+/main
