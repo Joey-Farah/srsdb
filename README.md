@@ -1,4 +1,6 @@
-# rslp — a relational database engine, built from scratch in Go
+# srsdb — a relational database engine, built from scratch in Go
+
+> Repo: **srsdb** (Slippi Ranked Stats DB). The engine itself is named **rslp** (the Go module).
 
 A small on-disk relational database engine written by hand in Go — page-based storage,
 a B+tree index, a query execution engine, and a SQL parser — built to understand how
