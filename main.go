@@ -43,9 +43,6 @@ type Game struct {
 	Duration int
 }
 
-// replays
-var slpPath = ""
-
 // /Users/joeyfarah/Documents/slp replays/Game_20260409T184304.slp
 
 var directoryPath = "/Users/joeyfarah/Documents/slp replays"

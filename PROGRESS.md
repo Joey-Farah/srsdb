@@ -67,27 +67,40 @@ proper storage layer. **Joey writes the pager** (explicitly his — off-limits f
   `…/rslp` and it builds fine); package *name* (`package storage`) ≠ filename (`pager.go`);
   exported = Capitalized.
 
-### ▶▶ RESUME HERE — pager interface shape (one open question)
-Mid-grill on the pager's interface. Two shapes presented:
-- **A:** free funcs, pass the file each call — `ReadPage(f *os.File, k int)`. (rejected: every
-  future feature grows every param list)
-- **B (recommended):** a `Pager` **struct that owns the `*os.File`**, with methods +
-  constructor:
-  ```go
-  type Pager struct { file *os.File }
-  func Open(path string) (*Pager, error)
-  func (p *Pager) ReadPage(k int) []byte
-  func (p *Pager) WritePage(k int, data []byte) error
-  ```
-  Why the struct: the file handle is owned state; future state (cache, page count, free list)
-  becomes more struct fields, not more params. Idiomatic "thing that owns a resource" (mirrors
-  `os.File`). The deep-module shape from Joey's operating manual.
+### Interface shape — DECIDED: `Pager` struct owns the `*os.File`
+Chose the struct-with-methods shape (over free funcs that pass the file each call): the file
+handle is owned state, and future state (cache, page count, free list) becomes more struct
+fields, not wider param lists. Idiomatic "thing that owns a resource" (mirrors `os.File`).
+```go
+type Pager struct { file *os.File }
+func Open(path string) (*Pager, error)          // ✅ written
+func (p *Pager) WritePage(k int, data []byte) error   // ⬅ next
+func (p *Pager) ReadPage(k int) []byte                // after
+```
 
-**Open question to answer on return:** does Joey agree with the struct shape, and does he get
-*why the file handle lives inside the struct* rather than being passed each call?
+### ✅ `Open` DONE (Joey wrote it)
+`storage/pager.go`: `os.Open(path)` → `if err != nil { return nil, err }` →
+`return &Pager{file: file}, nil`. Builds clean. Go lessons landed:
+- `os.Open` returns **two** values (`*os.File, error`) — must capture both (`file, err :=`).
+- **Library error idiom** ≠ `main`: a constructor *returns* the error (`return nil, err`) so the
+  CALLER decides — it doesn't `log.Fatal` and kill the caller's program. Errors bubble up the
+  chain to whoever (eventually `main`) handles them. First slot `nil` = no valid Pager on
+  failure; pointers can be `nil`.
+- `&Pager{file: file}` builds the struct and takes its address → returns the `*Pager`.
+- Also covered: method-receiver syntax `func (p *Pager) Name(...)` — `p` is the receiver
+  (like `this`, but you name it); the method reaches the file via `p.file`, which is the whole
+  payoff of bundling the handle into the struct (don't pass it each call).
+- Process note: Joey (rightly) called out that sketch/placeholder syntax is bad for learning —
+  give REAL compilable Go, one declaration at a time, no skipping around.
 
-**Then, in order:** spec exact types (a `PageSize = 4096` const; a page = `[]byte` len 4096)
-→ Joey writes `Open` as the tracer bullet → round-trip test in `storage/pager_test.go`
+### ▶▶ RESUME HERE — write `WritePage` (the tracer-bullet's "put" half)
+Chose to write `WritePage` before `ReadPage` (test must put data before it can read it back).
+Goal: `func (p *Pager) WritePage(k int, data []byte) error` — seek to byte offset `k*PageSize`
+in `p.file`, write the page's bytes, return any error. Still TODO before/with it:
+- Add a `const PageSize = 4096` (page size constant) — not yet defined.
+- Decide the seek mechanism (`p.file.WriteAt(data, offset)` is the clean one-call option —
+  writes at an absolute offset, no separate Seek). Let Joey reason it out.
+**Then:** `ReadPage` (the "get" half) → round-trip test in `storage/pager_test.go`
 (write known bytes to page k, read back, assert equal) → only then add the cache.
 
 ---
