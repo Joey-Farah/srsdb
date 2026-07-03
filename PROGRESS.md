@@ -73,9 +73,9 @@ handle is owned state, and future state (cache, page count, free list) becomes m
 fields, not wider param lists. Idiomatic "thing that owns a resource" (mirrors `os.File`).
 ```go
 type Pager struct { file *os.File }
-func Open(path string) (*Pager, error)          // ✅ written
-func (p *Pager) WritePage(k int, data []byte) error   // ⬅ next
-func (p *Pager) ReadPage(k int) []byte                // after
+func Open(path string) (*Pager, error)                // ✅ written
+func (p *Pager) WritePage(k int, data []byte) error   // ✅ written
+func (p *Pager) ReadPage(k int) (?, ?)                // ⬅ next (return shape TBD)
 ```
 
 ### ✅ `Open` DONE (Joey wrote it)
@@ -93,15 +93,34 @@ func (p *Pager) ReadPage(k int) []byte                // after
 - Process note: Joey (rightly) called out that sketch/placeholder syntax is bad for learning —
   give REAL compilable Go, one declaration at a time, no skipping around.
 
-### ▶▶ RESUME HERE — write `WritePage` (the tracer-bullet's "put" half)
-Chose to write `WritePage` before `ReadPage` (test must put data before it can read it back).
-Goal: `func (p *Pager) WritePage(k int, data []byte) error` — seek to byte offset `k*PageSize`
-in `p.file`, write the page's bytes, return any error. Still TODO before/with it:
-- Add a `const PageSize = 4096` (page size constant) — not yet defined.
-- Decide the seek mechanism (`p.file.WriteAt(data, offset)` is the clean one-call option —
-  writes at an absolute offset, no separate Seek). Let Joey reason it out.
-**Then:** `ReadPage` (the "get" half) → round-trip test in `storage/pager_test.go`
-(write known bytes to page k, read back, assert equal) → only then add the cache.
+### ✅ `PageSize` const + `WritePage` DONE (Joey wrote them)
+- `const PageSize = 4096`.
+- `func (p *Pager) WritePage(k int, data []byte) error`: `offset := int64(k) * PageSize`
+  → `_, err := p.file.WriteAt(data, offset)` → `if err != nil { return err }` → `return nil`.
+  Builds + vets clean.
+- Go lessons landed (lots of them — this was a slow, deep rep):
+  - **Method receiver** taught properly for the first time (flagged as NEW — it's the first
+    method in the whole codebase). `func (p *Pager) Name(...)` — receiver goes BEFORE the name,
+    is like `this`/`self` but named explicitly; it's what makes `p.file` exist inside. Benefit:
+    don't pass the struct as a param on every call; also associates the fn with the type →
+    later enables interface-based swappable storage (Ph4).
+  - Header anatomy: `func (RECEIVER) NAME(PARAMS) RETURN {` — Joey had all four slots scrambled;
+    walked through each.
+  - **Single return value → parens optional** (`) error` vs `) (*Pager, error)`) — flagged NEW.
+  - `WriteAt(b []byte, off int64) (n int, err error)` — offset is **int64** (needs `int64(k)`);
+    discard `n` with `_`.
+  - **`return nil` = success**, not "return nothing": the `error` return is a success/failure
+    REPORT, not data. Dropping the `error` return would silently swallow disk-write failures.
+  - `WriteAt` needs no separate Seek — it writes at an absolute offset in one call.
+
+### ▶▶ RESUME HERE — write `ReadPage` (the "get" half, mirror of WritePage)
+Two design Qs posed to Joey (answer first, then spec the body):
+1. **Return shape?** It *produces* bytes and can fail → return `([]byte, error)`.
+2. **Buffer to read into?** `ReadAt` reads into a caller-supplied `[]byte`; size it to `PageSize`
+   (`make([]byte, PageSize)`). Mirror of `WriteAt`: `ReadAt(b []byte, off int64) (n, err)`.
+**Then:** round-trip test in `storage/pager_test.go` (write known bytes to page k, read back,
+assert equal) → only then add the cache. Note the test needs a real/temp file — use
+`t.TempDir()` + create the file (Open only *opens* existing; may need an OpenOrCreate later).
 
 ---
 
