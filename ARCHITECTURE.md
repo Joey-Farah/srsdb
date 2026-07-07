@@ -97,11 +97,13 @@ flowchart TB
         SLP[".slp files"] --> JS["slp -s (slippi-js)"] --> TOGAME["toGame()"] --> JSONL["data/games.jsonl<br/>(throwaway flat file)"]
     end
 
-    subgraph NOW["🟡 In progress — Phase 3 (storage/ package)"]
-        OPEN["Open(path) ✅"]
-        WRITE["WritePage(k, data) ◀ writing now"]
-        READ["ReadPage(k) — next"]
-        OPEN --- WRITE --- READ
+    subgraph NOW["🟡 Phase 3 (storage/ package) — core done, cache next"]
+        OPEN["Open(path) ✅ (read-write + create)"]
+        WRITE["WritePage(k, data) ✅"]
+        READ["ReadPage(k) ✅"]
+        TEST["round-trip test ✅"]
+        CACHE["buffer-pool cache — next"]
+        OPEN --- WRITE --- READ --- TEST --- CACHE
     end
 
     subgraph LATER["⬜ Not started — Phases 4–6"]

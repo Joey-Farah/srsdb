@@ -19,11 +19,11 @@ Phases are NOT equal size — the engine core (Ph3–6) is the bulk. Weighting r
 |---|---|---|---|
 | Ph1 parse `.slp` → `Game` | 8% | ✅ complete | 8% |
 | Ph2 flat-file ingest + read-back | 7% | ✅ complete | 7% |
-| Ph3 pages + pager | 20% | 🟡 design in progress | 0% |
+| Ph3 pages + pager | 20% | 🟡 core done (Open/Write/Read + test) — cache next | 14% |
 | Ph4 B+tree | 25% | ⬜ not started | 0% |
 | Ph5 operators | 18% | ⬜ not started | 0% |
 | Ph6 SQL parser → plan | 22% | ⬜ not started | 0% |
-| **Total** | **100%** | | **~15%** |
+| **Total** | **100%** | | **~29%** |
 
 > Update the % and status as phases close. The weighting is a rough planning estimate,
 > not a precise measure — the point is to see the engine core (Ph3–6, 85% of the work) is
@@ -31,7 +31,7 @@ Phases are NOT equal size — the engine core (Ph3–6) is the bulk. Weighting r
 
 ---
 
-## 🟡 PHASE 3 — pages + pager (DESIGN GRILLING IN PROGRESS — no code yet)
+## 🟡 PHASE 3 — pages + pager (CORE DONE — Open/WritePage/ReadPage + round-trip test; cache next)
 
 The real start of the engine. Replaces the throwaway `data/games.jsonl` flat file with a
 proper storage layer. **Joey writes the pager** (explicitly his — off-limits for Claude).
@@ -75,7 +75,7 @@ fields, not wider param lists. Idiomatic "thing that owns a resource" (mirrors `
 type Pager struct { file *os.File }
 func Open(path string) (*Pager, error)                // ✅ written
 func (p *Pager) WritePage(k int, data []byte) error   // ✅ written
-func (p *Pager) ReadPage(k int) (?, ?)                // ⬅ next (return shape TBD)
+func (p *Pager) ReadPage(k int) ([]byte, error)       // ✅ written
 ```
 
 ### ✅ `Open` DONE (Joey wrote it)
@@ -113,14 +113,34 @@ func (p *Pager) ReadPage(k int) (?, ?)                // ⬅ next (return shape 
     REPORT, not data. Dropping the `error` return would silently swallow disk-write failures.
   - `WriteAt` needs no separate Seek — it writes at an absolute offset in one call.
 
-### ▶▶ RESUME HERE — write `ReadPage` (the "get" half, mirror of WritePage)
-Two design Qs posed to Joey (answer first, then spec the body):
-1. **Return shape?** It *produces* bytes and can fail → return `([]byte, error)`.
-2. **Buffer to read into?** `ReadAt` reads into a caller-supplied `[]byte`; size it to `PageSize`
-   (`make([]byte, PageSize)`). Mirror of `WriteAt`: `ReadAt(b []byte, off int64) (n, err)`.
-**Then:** round-trip test in `storage/pager_test.go` (write known bytes to page k, read back,
-assert equal) → only then add the cache. Note the test needs a real/temp file — use
-`t.TempDir()` + create the file (Open only *opens* existing; may need an OpenOrCreate later).
+### ✅ `ReadPage` + read-write `Open` + round-trip test DONE (Joey wrote them) — commit `6bf659b`
+- `func (p *Pager) ReadPage(k int) ([]byte, error)`: `buffer := make([]byte, PageSize)` →
+  `offset := int64(k) * PageSize` → `_, err := p.file.ReadAt(buffer, offset)` →
+  `if err != nil { return nil, err }` → `return buffer, nil`.
+- **`Open` upgraded read-only → read-write + create:** `os.Open(path)` →
+  `os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0644)`. The round-trip test *drove* this — a
+  read-only handle can't `WriteAt`, and a fresh temp file doesn't exist yet (TDD found the gap).
+- **First test in the codebase:** `storage/pager_test.go`, `TestReadWriteRoundTrip` — write
+  known bytes to page 3, read back, `bytes.Equal` assert. `go test ./storage/` → green.
+- Go lessons landed:
+  - **`make([]byte, PageSize)`** — builtin (not user-written); allocates a zeroed slice you own.
+    `ReadAt` *fills a buffer you supply* — the data lands in `buffer`, NOT the return value.
+  - **`ReadAt` returns `(n int, err error)`** — first value is a byte *count*, not the page;
+    discard with `_` (mirror of `WriteAt`).
+  - Two-value return type → **every** `return` needs two values (`return nil, err` / `return buffer, nil`).
+  - **Test conventions:** `_test.go` files compile only under `go test`; `func TestXxx(t *testing.T)`
+    — naming IS the wiring; `t.TempDir()` = auto-cleaned temp dir; `t.Fatalf` (stop) vs `t.Errorf` (continue).
+  - **`bytes.Equal(a, b)`** — can't compare slices with `==` (won't compile).
+  - **`(cached)`** — `go test` replays a cached pass when nothing changed; `-count=1` forces a re-run.
+
+### ▶▶ RESUME HERE — Phase 3 cache (buffer pool) OR quiz then move to Phase 4
+Pager core is functionally complete and tested. Two paths (decide with Joey):
+1. **Buffer-pool cache** — the deferred optimization: `map[int]*page` in the `Pager` struct so
+   repeat `ReadPage(k)` serves from memory, not disk. This is the "add the cache LATER" note
+   finally coming due. Still Joey's code.
+2. **Skip cache for now → Phase 4 (B+tree).** The cache is an optimization, not a correctness
+   gap; could defer until there's real query load to make it worth it.
+Phase-close quiz pending either way (see CONTEXT.md: quiz after each phase).
 
 ---
 
