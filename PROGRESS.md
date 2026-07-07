@@ -133,14 +133,15 @@ func (p *Pager) ReadPage(k int) ([]byte, error)       // ✅ written
   - **`bytes.Equal(a, b)`** — can't compare slices with `==` (won't compile).
   - **`(cached)`** — `go test` replays a cached pass when nothing changed; `-count=1` forces a re-run.
 
-### ▶▶ RESUME HERE — Phase 3 cache (buffer pool) OR quiz then move to Phase 4
-Pager core is functionally complete and tested. Two paths (decide with Joey):
-1. **Buffer-pool cache** — the deferred optimization: `map[int]*page` in the `Pager` struct so
-   repeat `ReadPage(k)` serves from memory, not disk. This is the "add the cache LATER" note
-   finally coming due. Still Joey's code.
-2. **Skip cache for now → Phase 4 (B+tree).** The cache is an optimization, not a correctness
-   gap; could defer until there's real query load to make it worth it.
-Phase-close quiz pending either way (see CONTEXT.md: quiz after each phase).
+### ✅ Phase-close quiz PASSED — Joey explained (his words): fixed pages = compute vs scan;
+`k × PageSize` = byte offset; pager is a dumb byte-mover, the B+tree index decides *which* page.
+The "read pager is the mechanism the index will use" aha landed. Captured in `INSIGHTS.md`.
+
+### ▶▶ RESUME HERE — Phase 4 (B+tree). **Cache SKIPPED by decision.**
+Buffer-pool cache (`map[int]*page` in the Pager) is deferred — it's an optimization, not a
+correctness gap; revisit only if/when query load makes it worth it. Moving to the B+tree: the
+"brain" that maps a key → page number so `ReadPage(k)` is called with a *known* k, never a scan.
+Still Joey's code (off-limits for Claude to write). Start with a Phase 4 design grill.
 
 ---
 
