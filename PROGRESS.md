@@ -160,17 +160,40 @@ Still Joey's code (off-limits for Claude to write). Start with a Phase 4 design 
     secondary index** (Phase 5+) — "look up this exact Slippi game" — not discarded, just not
     the primary. See `INSIGHTS.md` → "A natural key can exist and still be the wrong storage key."
 
-### ▶▶ RESUME HERE — plan synthetic ID generation, with an eye on scale
-Joey's stated scale target: **multiple terabytes of `.slp` replays** eventually loaded (not
-just the current ~200k-file sample) — so the ID scheme needs to be planned for that headroom
-up front, not patched later. Open questions to grill next:
-1. **Width:** `int64` (not `int32`) — even a naive 1 row/game estimate at multi-TB scale can
-   plausibly exceed `int32`'s ~2.1B ceiling; `int64` costs nothing extra in a fixed-width field.
-2. **Where the counter lives / how it persists** across process restarts and ingest runs
-   (e.g. a reserved header page storing "next ID", vs. deriving it from existing data on open).
-3. **Assignment point:** does `toGame()`/ingest assign the ID, or does the storage layer
-   (e.g. a future `Insert`) assign it at write time?
-Not yet decided — pending the next grill turn.
+### ✅ ID-generation design DONE — full tradeoffs in `docs/adr/0001-synthetic-row-id-generation.md`
+1. **Width: `int64`** (not `int32`) — free headroom against the multi-TB scale target; no
+   realistic downside since the field is fixed-width either way.
+2. **Persistence: reserved header page** — page 0 stores `nextID`; `Open` reads it to recover
+   the counter (O(1), no full-dataset scan on startup); mirrors SQLite reserving page 1 for a
+   header. The pager itself stays ignorant that page 0 is special — that knowledge lives in the
+   layer above (B+tree/storage-engine), keeping the pager a dumb byte-mover.
+3. **Assignment point: storage layer, at write time** — a future `Insert()` reads the counter,
+   hands out the ID, bumps + persists it, then stores the row. Ingest code (`toGame()`) never
+   computes an ID itself — mirrors Oracle `IDENTITY`/sequence columns (DB mints the key, caller
+   doesn't). Single source of truth → structurally impossible to double-assign, even if a second
+   ingest path (e.g. the parked `.slp`-upload stretch) is added later.
+
+### ✅ Leaf-node shape DECIDED: clustered (leaf stores the full row, not a pointer)
+Weighed clustered (row data lives directly in the leaf, keyed by row ID) vs. non-clustered
+(leaf stores `(rowID, page#+slot)`, real row lives in a separate heap). Chose **clustered**:
+matches the project's own reference (*Build Your Own Database From Scratch*), avoids designing
+two structures (tree + heap) at once, and fits the current access pattern ("fetch by ID," not
+heavy secondary-index scanning — that's a Phase 5+ concern where non-clustered secondary
+indexes become worth it).
+
+### ▶▶ RESUME HERE — build the slotted page as its own tracer bullet (leaf-node packing)
+Clustered rows are variable-length (`Stage`/`Character` strings etc.), so a fixed 4096-byte
+leaf page needs the **slotted-page** layout designed conceptually back in Phase 3 (records pack
+from one end, a slot directory of `{offset,length}` grows from the other end) — deliberately
+NOT built then (no consumer yet); now the leaf node is that consumer. Plan: implement + test
+slotting **in isolation** (pack N variable-length byte records into one page, read back by slot
+number) *before* wiring it into the B+tree, per the tracer-bullet rule (one behavior at a time).
+- **Next decision (in progress, not yet closed):** where the code lives — leaning
+  `storage/slotted.go`, same `storage` package as `pager.go` (both are "how bytes are organized
+  on disk," just different granularity: file-of-pages vs. bytes-within-a-page). No import
+  boundary needed yet since nothing outside `storage` needs it independently. Confirm this at
+  resume, then design the slot-directory struct + `Insert`/`Get`-by-slot functions (Joey writes
+  the code; Claude may write the test harness).
 
 ---
 
