@@ -7,6 +7,29 @@
 
 ---
 
+## Phase 4 — B+tree / keys
+
+### A natural key can exist and still be the wrong storage key
+I went looking for a per-game unique id straight from Slippi, sure there had to be one — and
+there is: `start.match = { id, game, tiebreaker }`. `match.id` identifies the *set*, `game` is
+the game number within it, so `(match.id, match.game)` really is unique per game. My composite-
+key instinct was right about the *data model*.
+
+But it's the wrong key for the **storage layer** specifically, for three reasons: (1) `match.id`
+is a variable-length string (~35 chars) — exactly the variable-width problem fixed-size pages
+exist to kill; (2) it's only present on newer online replays — `hash` was `null` and older/
+offline files may lack `match` entirely, so it can't anchor a primary key; (3) string comparison
+in a tree is slower than one fixed-width int compare, node after node.
+
+Resolution (standard DB pattern, same move Oracle makes with `GENERATED AS IDENTITY` + a
+`UNIQUE` constraint on the natural key): **primary/clustering key = synthetic int row id**
+(fixed-width, always present, cheap to compare) — that's what the B+tree orders by. The natural
+`(match.id, match.game)` becomes a documented candidate for a *secondary* index later, once
+querying "find this exact Slippi game" matters. Two different jobs: uniqueness in the domain
+vs. an efficient key to physically order pages by.
+
+---
+
 ## Phase 3 — Storage / the Pager
 
 ### The page number is arbitrary *to the pager* — the index gives it meaning

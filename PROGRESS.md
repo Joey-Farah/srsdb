@@ -145,6 +145,35 @@ Still Joey's code (off-limits for Claude to write). Start with a Phase 4 design 
 
 ---
 
+## 🟡 PHASE 4 — B+tree (DESIGN GRILLING IN PROGRESS)
+
+### Design locked so far
+- **Primary/clustering key: synthetic `int` row ID** (auto-assigned at ingest), NOT a natural
+  key. Confirmed by checking real `slp -s` output: Slippi *does* have a natural per-game
+  identity — `start.match = {id, game, tiebreaker}`, where `(match.id, match.game)` is unique
+  per game (`match.id` = the set/series, `game` = game number within it). Rejected as the
+  storage key anyway: `match.id` is a variable-length string (~35 chars, reintroduces the
+  variable-width problem fixed pages solve), and it's **not always present** — older/offline
+  replays may lack `match` entirely (`hash` was also `null` on a sampled file), so it can't
+  anchor a primary key. A synthetic int is fixed-width and always present.
+  - `(match.id, match.game)` is kept as a **documented natural-key candidate for a future
+    secondary index** (Phase 5+) — "look up this exact Slippi game" — not discarded, just not
+    the primary. See `INSIGHTS.md` → "A natural key can exist and still be the wrong storage key."
+
+### ▶▶ RESUME HERE — plan synthetic ID generation, with an eye on scale
+Joey's stated scale target: **multiple terabytes of `.slp` replays** eventually loaded (not
+just the current ~200k-file sample) — so the ID scheme needs to be planned for that headroom
+up front, not patched later. Open questions to grill next:
+1. **Width:** `int64` (not `int32`) — even a naive 1 row/game estimate at multi-TB scale can
+   plausibly exceed `int32`'s ~2.1B ceiling; `int64` costs nothing extra in a fixed-width field.
+2. **Where the counter lives / how it persists** across process restarts and ingest runs
+   (e.g. a reserved header page storing "next ID", vs. deriving it from existing data on open).
+3. **Assignment point:** does `toGame()`/ingest assign the ID, or does the storage layer
+   (e.g. a future `Insert`) assign it at write time?
+Not yet decided — pending the next grill turn.
+
+---
+
 ## ✅ PHASE 1 COMPLETE — parse a single `.slp` → clean `Game`
 
 Full pipeline runs end-to-end and `go vet` is clean:
