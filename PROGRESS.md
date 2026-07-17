@@ -181,19 +181,40 @@ two structures (tree + heap) at once, and fits the current access pattern ("fetc
 heavy secondary-index scanning — that's a Phase 5+ concern where non-clustered secondary
 indexes become worth it).
 
-### ▶▶ RESUME HERE — build the slotted page as its own tracer bullet (leaf-node packing)
+### ✅ File location DECIDED: `storage/slotted.go`, same `storage` package as `pager.go`
+Tightly coupled to the page format the pager already defines (`PageSize`, byte layout); zero
+external consumers today; Go packages are cheap to split later if the B+tree ever needs it
+independently. Splitting into a new package now would be speculative structure — YAGNI.
+
+### Slotted-page format DECIDED so far
 Clustered rows are variable-length (`Stage`/`Character` strings etc.), so a fixed 4096-byte
 leaf page needs the **slotted-page** layout designed conceptually back in Phase 3 (records pack
-from one end, a slot directory of `{offset,length}` grows from the other end) — deliberately
-NOT built then (no consumer yet); now the leaf node is that consumer. Plan: implement + test
+from one end, a slot directory grows from the other end) — deliberately NOT built then (no
+consumer yet); now the leaf node is that consumer.
+1. **Slot entry = `{offset, length}` only — no delete/tombstone flag.** Domain reasoning (Joey's
+   own insight, captured in `INSIGHTS.md`): rslp is an archive of historical Slippi replays —
+   games that were played don't get "un-played," so there's no delete workflow to design for.
+   Slotted pages *can* support tombstones cheaply, but adding one now designs for an operation
+   this database will probably never need. Revisit only if a real delete requirement shows up.
+2. **Page header = `numSlots` only** (no separately-stored tail/free-space offset). The slot
+   directory's start (and thus free space between the two growing ends) is *derived*:
+   `tailOffset = PageSize - numSlots × slotEntrySize`. Storing a second redundant offset risks
+   the two numbers drifting out of sync for no benefit.
+3. **Slot fields (`offset`, `length`) as `uint16`, not `uint32`.** Unlike the row ID (which
+   needed multi-TB headroom because it counts *all rows ever*), these values are bounded by
+   `PageSize = 4096` no matter how much data loads — `uint16` (max 65,535) can never overflow.
+   `uint32` would waste 2 extra bytes per slot for no future benefit. *(Proposed, not yet
+   confirmed by Joey — confirm at resume.)*
+4. Serialization will use **`encoding/binary`** (e.g. `binary.LittleEndian.PutUint16`/`Uint16`)
+   to pack these fixed-width ints into the page's raw `[]byte` — same idea as `make()` for the
+   pager: a stdlib tool, not something Joey writes himself.
+
+### ▶▶ RESUME HERE
+Confirm the `uint16` slot-field width (question was open when we paused), then design the full
+slot-directory struct + pack/unpack (`Insert`/`Get`-by-slot) functions. Plan: implement + test
 slotting **in isolation** (pack N variable-length byte records into one page, read back by slot
 number) *before* wiring it into the B+tree, per the tracer-bullet rule (one behavior at a time).
-- **Next decision (in progress, not yet closed):** where the code lives — leaning
-  `storage/slotted.go`, same `storage` package as `pager.go` (both are "how bytes are organized
-  on disk," just different granularity: file-of-pages vs. bytes-within-a-page). No import
-  boundary needed yet since nothing outside `storage` needs it independently. Confirm this at
-  resume, then design the slot-directory struct + `Insert`/`Get`-by-slot functions (Joey writes
-  the code; Claude may write the test harness).
+Joey writes the code; Claude may write the test harness.
 
 ---
 

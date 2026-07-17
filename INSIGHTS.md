@@ -9,6 +9,16 @@
 
 ## Phase 4 — B+tree / keys
 
+### Deletes are a workload question, not just a data-structure question
+Slotted pages are built to handle deleted records gracefully (tombstone a slot, don't
+shift bytes) — but rslp is an archive of historical Slippi replays. Games that were
+played don't get "un-played." There's no user-facing delete workflow at all. So even
+though the data structure *could* support tombstones cheaply, adding one now would be
+designing for an operation this database will probably never need. Skipped it —
+`{offset, length}` slots only, no delete flag, until a real reason shows up.
+
+
+
 ### A natural key can exist and still be the wrong storage key
 I went looking for a per-game unique id straight from Slippi, sure there had to be one — and
 there is: `start.match = { id, game, tiebreaker }`. `match.id` identifies the *set*, `game` is
