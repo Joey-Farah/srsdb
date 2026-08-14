@@ -208,12 +208,39 @@ consumer yet); now the leaf node is that consumer.
    to pack these fixed-width ints into the page's raw `[]byte` — same idea as `make()` for the
    pager: a stdlib tool, not something Joey writes himself.
 
-### ▶▶ RESUME HERE
-Confirm the `uint16` slot-field width (question was open when we paused), then design the full
-slot-directory struct + pack/unpack (`Insert`/`Get`-by-slot) functions. Plan: implement + test
-slotting **in isolation** (pack N variable-length byte records into one page, read back by slot
-number) *before* wiring it into the B+tree, per the tracer-bullet rule (one behavior at a time).
-Joey writes the code; Claude may write the test harness.
+### ✅ `Slot` struct + `putSlot`/`getSlot` DONE (Joey wrote them) — `storage/slotted.go`
+```go
+type Slot struct { Offset uint16; Length uint16 }
+func putSlot(pageBuffer []byte, position int, slot Slot)  // encode: 2x binary.LittleEndian.PutUint16
+func getSlot(pageBuffer []byte, position int) Slot        // decode: 2x binary.LittleEndian.Uint16
+```
+Builds clean. Go lessons landed:
+- **Function signature vs. function call:** the signature (`PutUint16(dst []byte, v uint16)`)
+  describes required types; calling it means substituting real values, never retyping the types
+  themselves (Joey initially pasted the signature as if it were a call).
+- Slice-arithmetic bug caught: `pageBuffer[position:+2]` ≠ `pageBuffer[position+2:]` — unary `+2`
+  is just the literal `2` as the slice's end bound, not `position` plus 2; the first form silently
+  produces a backwards/invalid slice instead of shifting the start.
+- `PutUint16` returns nothing (writes into the slice you hand it); `Uint16` takes one arg and
+  **returns** the decoded value — mirror pair, same relationship as `WriteAt`/`ReadAt`.
+
+### ✅ `putNumSlots`/`getNumSlots` DONE (Joey wrote them) — page header (byte 0)
+```go
+func putNumSlots(pageBuffer []byte, numSlots uint16)
+func getNumSlots(pageBuffer []byte) uint16
+```
+Simpler than `Slot`: one `uint16` at a fixed spot (byte 0), so no `position` param and only one
+`PutUint16`/`Uint16` call each. Purpose: every page needs to self-report how many slots it holds
+before anything can read its slot directory or find free space — bytes on disk carry no meaning
+on their own. Builds clean. Committed `489b97f` (Slot+putSlot/getSlot); header funcs pending commit.
+
+### ▶▶ RESUME HERE — step 5: insert a record into a page
+Given a page buffer + a record's raw `[]byte`: write the record bytes in from the front, write a
+new `Slot{offset,length}` via `putSlot` at the back, bump `numSlots` via `putNumSlots`. First
+function that actually composes everything built so far. Then step 6 (get a record by slot
+number), then the full round-trip test (pack N fake records into one page, read every one back
+by slot, assert bytes match) — the actual tracer-bullet payoff. Joey writes the code; Claude may
+write the test harness.
 
 ---
 
