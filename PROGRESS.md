@@ -200,11 +200,10 @@ consumer yet); now the leaf node is that consumer.
    directory's start (and thus free space between the two growing ends) is *derived*:
    `tailOffset = PageSize - numSlots × slotEntrySize`. Storing a second redundant offset risks
    the two numbers drifting out of sync for no benefit.
-3. **Slot fields (`offset`, `length`) as `uint16`, not `uint32`.** Unlike the row ID (which
+3. **✅ Slot fields (`offset`, `length`) as `uint16`, not `uint32`.** Unlike the row ID (which
    needed multi-TB headroom because it counts *all rows ever*), these values are bounded by
    `PageSize = 4096` no matter how much data loads — `uint16` (max 65,535) can never overflow.
-   `uint32` would waste 2 extra bytes per slot for no future benefit. *(Proposed, not yet
-   confirmed by Joey — confirm at resume.)*
+   `uint32` would waste 2 extra bytes per slot for no future benefit.
 4. Serialization will use **`encoding/binary`** (e.g. `binary.LittleEndian.PutUint16`/`Uint16`)
    to pack these fixed-width ints into the page's raw `[]byte` — same idea as `make()` for the
    pager: a stdlib tool, not something Joey writes himself.
