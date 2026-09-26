@@ -232,15 +232,25 @@ func getNumSlots(pageBuffer []byte) uint16
 Simpler than `Slot`: one `uint16` at a fixed spot (byte 0), so no `position` param and only one
 `PutUint16`/`Uint16` call each. Purpose: every page needs to self-report how many slots it holds
 before anything can read its slot directory or find free space — bytes on disk carry no meaning
-on their own. Builds clean. Committed `489b97f` (Slot+putSlot/getSlot); header funcs pending commit.
+on their own. Builds clean. Committed `489b97f` (Slot+putSlot/getSlot) and `ee66cb9` (header funcs).
 
-### ▶▶ RESUME HERE — step 5: insert a record into a page
-Given a page buffer + a record's raw `[]byte`: write the record bytes in from the front, write a
-new `Slot{offset,length}` via `putSlot` at the back, bump `numSlots` via `putNumSlots`. First
-function that actually composes everything built so far. Then step 6 (get a record by slot
-number), then the full round-trip test (pack N fake records into one page, read every one back
-by slot, assert bytes match) — the actual tracer-bullet payoff. Joey writes the code; Claude may
-write the test harness.
+### ✅ `slotPosition` DONE (Joey wrote it) — first helper for step 5
+```go
+const slotSize = 4
+func slotPosition(numSlots uint16) int  // PageSize - (int(numSlots)+1)*slotSize → 4092, 4088, 4084…
+```
+Lessons: slots are *placed* back-to-front, but each slot's own bytes are *written* forward from
+`position` (so the first slot starts at 4092, not 4095). Convert `numSlots` to `int` **before**
+the math — in `uint16` an overfull page silently wraps to 65532 instead of going negative (-4).
+
+### ▶▶ RESUME HERE — step 5: `insertRecord`
+**⚠️ FIRST, before coding: review `ARCHITECTURE.md` (§1 stack + §4 code map & page layout)** — Joey's request.
+
+Open design question to start with: `slotPosition` says where the next *slot* goes (back of page).
+Where does the next *record* go (front of page), given the header only stores `numSlots`?
+(Hint: records pack in order; the most recent slot knows its record's `Offset` + `Length`.)
+Then: write record bytes → `putSlot` at `slotPosition` → bump `putNumSlots`; handle "page full".
+Then step 6 (get record by slot #), then the pack-N-records round-trip test.
 
 ---
 
