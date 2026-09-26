@@ -15,6 +15,8 @@ type Slot struct {
 	Length uint16
 }
 
+const slotSize = 4
+
 func putSlot(pageBuffer []byte, position int, slot Slot) {
 	binary.LittleEndian.PutUint16(pageBuffer[position:], slot.Offset)
 	binary.LittleEndian.PutUint16(pageBuffer[position+2:], slot.Length)
@@ -38,4 +40,10 @@ func getNumSlots(pageBuffer []byte) uint16 {
 	numSlot := binary.LittleEndian.Uint16(pageBuffer)
 
 	return numSlot
+}
+
+func slotPosition(numSlots uint16) int {
+	// Size of page in bytes subtracted by the number of slots plus the slot we're adding multiplied by number of bytes in a slot
+	return PageSize - ((int(numSlots) + 1) * slotSize)
+
 }
