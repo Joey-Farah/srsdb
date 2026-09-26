@@ -3,10 +3,11 @@
 > Visual companion to `CONTEXT.md` (mission) and `PROGRESS.md` (roadmap & status).
 > Diagrams use [Mermaid](https://mermaid.js.org/), which GitHub renders natively.
 >
-> **Two things are drawn here:**
+> **Four things are drawn here:**
 > 1. **The engine stack** — the final layered design, built bottom-up.
 > 2. **The two data paths** — how data flows *in* (ingest) and how a query flows *down* and back *up*.
 > 3. **Where we are today** — the slice of the above that actually runs right now.
+> 4. **Code map** — the medium level: which file does what, and how a page's bytes are laid out.
 
 ---
 
@@ -20,8 +21,8 @@ table until pages, a B+tree, and records exist beneath it.
 flowchart TB
     SQL["<b>SQL parser</b> — Phase 6<br/>text query → AST → query plan"]
     OPS["<b>Execution operators</b> — Phase 5<br/>scan · filter (WHERE) · aggregate (GROUP BY/COUNT/AVG)"]
-    TREE["<b>B+tree index</b> — Phase 4<br/>ordered keys → fast lookup, no full scan"]
-    PAGER["<b>Pager</b> — Phase 3  ◀ WE ARE HERE<br/>reads/writes fixed 4KB pages by number"]
+    TREE["<b>B+tree index</b> — Phase 4  ◀ WE ARE HERE<br/>ordered keys → fast lookup, no full scan<br/>(leaf pages use the slotted-page layout)"]
+    PAGER["<b>Pager</b> — Phase 3 ✅<br/>reads/writes fixed 4KB pages by number"]
     DISK[("<b>Disk file</b><br/>one file, carved into 4096-byte pages")]
 
     SQL --> OPS --> TREE --> PAGER --> DISK
@@ -29,8 +30,9 @@ flowchart TB
     classDef done fill:#1f6f43,stroke:#0d3,color:#fff
     classDef now fill:#8a6d0b,stroke:#fc0,color:#fff
     classDef todo fill:#333,stroke:#777,color:#ccc
-    class PAGER now
-    class TREE,OPS,SQL todo
+    class PAGER done
+    class TREE now
+    class OPS,SQL todo
 ```
 
 **Why bottom-up:** the pager knows nothing about games or tables — it just moves bytes in
@@ -88,8 +90,8 @@ the B+tree (Phase 4) is to avoid the full O(n) scan we deliberately suffered in 
 
 ## 3. Where we are today
 
-Only the shaded parts exist. The ingest pipeline (Phases 1–2) runs; we're mid-build on the
-pager (Phase 3). Everything above the pager is not yet written.
+Phases 1–2 run end-to-end (into a throwaway flat file). The pager's core is done. We're now
+building the **slotted page** — the byte layout a B+tree leaf will use to hold variable-length rows.
 
 ```mermaid
 flowchart TB
@@ -97,23 +99,68 @@ flowchart TB
         SLP[".slp files"] --> JS["slp -s (slippi-js)"] --> TOGAME["toGame()"] --> JSONL["data/games.jsonl<br/>(throwaway flat file)"]
     end
 
-    subgraph NOW["🟡 Phase 3 (storage/ package) — core done, cache next"]
-        OPEN["Open(path) ✅ (read-write + create)"]
-        WRITE["WritePage(k, data) ✅"]
-        READ["ReadPage(k) ✅"]
-        TEST["round-trip test ✅"]
-        CACHE["buffer-pool cache — next"]
-        OPEN --- WRITE --- READ --- TEST --- CACHE
+    subgraph P3["✅ Phase 3 core — storage/pager.go"]
+        OPEN["Open"] --- WRITE["WritePage"] --- READ["ReadPage"] --- TEST["round-trip test"]
     end
 
-    subgraph LATER["⬜ Not started — Phases 4–6"]
-        TREE["B+tree"] --> OPSX["operators"] --> SQLX["SQL parser"]
+    subgraph NOW["🟡 Phase 4 — storage/slotted.go"]
+        SLOT["putSlot / getSlot ✅"]
+        HDR["putNumSlots / getNumSlots ✅"]
+        INS["insert record — NEXT"]
+        GET["get record by slot"]
+        RT["pack-N-records round-trip test"]
+        SLOT --- HDR --- INS --- GET --- RT
     end
 
-    DONE -.->|"replaces the flat file with real pages"| NOW
-    NOW -.-> LATER
+    subgraph LATER["⬜ Later"]
+        TREE["B+tree nodes & search"] --> OPSX["operators"] --> SQLX["SQL parser"]
+    end
+
+    DONE -.->|"replaced by real pages"| P3
+    P3 --> NOW -.-> LATER
 ```
 
-> The Phase 2 flat file (`data/games.jsonl`) is a **throwaway** stepping stone — Phase 3's
-> pager replaces it with real page-based storage. Keeping it in the diagram shows the
-> migration, which is part of the learning story.
+> Deferred from Phase 3: the buffer-pool cache. The Phase 2 flat file stays in the diagram
+> because the migration is part of the learning story.
+
+---
+
+## 4. Code map (medium level)
+
+| File | Package | What it does |
+|---|---|---|
+| `main.go` | `main` | Ingest + naive query. Lists the replay folder → shells out to `slp -s` per file → `json.Unmarshal` into `raw*` structs → `toGame()` → writes `data/games.jsonl` → reads it back and counts Falco games (the Phase 2 O(n) scan). |
+| `main.go` → `raw*` structs | | Mirror slippi-js's JSON exactly (`rawReplay`, `rawStart`, `rawPlayer`, `rawMetadata`). *Their* data model. |
+| `main.go` → `Game` / `Player` | | *Our* clean domain model: names, not ids. |
+| `main.go` → `toGame()` | | The anti-corruption seam: raw → clean, via the `stageNames` / `characterNames` lookup maps. |
+| `storage/pager.go` | `storage` | The dumb byte-mover. `Pager{file}` + `Open(path)`, `WritePage(k, data)`, `ReadPage(k)`. Page k lives at byte `k × 4096`. Knows nothing about what's inside a page. |
+| `storage/pager_test.go` | `storage` | Writes page 3, reads it back, asserts the bytes match. |
+| `storage/slotted.go` | `storage` | Layout *inside* one page: the page header and the slot directory, packed with `encoding/binary`. Will become the B+tree leaf format. |
+| `scratch.go` | `main` | Fully commented-out syntax practice. Not part of the build. |
+| `docs/adr/` | | Architecture Decision Records (0001: synthetic `int64` row ID). |
+
+### How the storage pieces nest
+
+```mermaid
+flowchart LR
+    FILE[("db file")] -->|"carved into"| PAGES["pages 0,1,2,… (4096 B each)<br/>pager.go"]
+    PAGES -->|"page 0 (planned)"| HDRPG["header page: nextID counter"]
+    PAGES -->|"leaf pages"| SLOTTED["slotted page<br/>slotted.go"]
+    SLOTTED --> ROWS["rows (Game bytes), keyed by int64 row ID"]
+```
+
+### Inside one slotted page (4096 bytes)
+
+```
+byte 0                                                            byte 4095
+┌──────────┬──────────┬──────────┬─────────────────┬────────┬────────┐
+│ numSlots │ record 0 │ record 1 │   free space    │ slot 1 │ slot 0 │
+│ uint16   │ records grow  →     │                 │  ← slots grow   │
+└──────────┴──────────┴──────────┴─────────────────┴────────┴────────┘
+each slot = {Offset uint16, Length uint16} = 4 bytes
+```
+
+- **Header** — just `numSlots`, 2 bytes at byte 0.
+- **Slot directory** starts at `PageSize − numSlots × 4`. It's calculated, never stored, so it can't drift out of sync.
+- **Slot n** tells you where record n's bytes are (`Offset`) and how long they are (`Length`).
+- No tombstones: rslp is an archive, so rows never get deleted.
