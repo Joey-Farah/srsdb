@@ -243,14 +243,24 @@ Lessons: slots are *placed* back-to-front, but each slot's own bytes are *writte
 `position` (so the first slot starts at 4092, not 4095). Convert `numSlots` to `int` **before**
 the math — in `uint16` an overfull page silently wraps to 65532 instead of going negative (-4).
 
-### ▶▶ RESUME HERE — step 5: `insertRecord`
-**⚠️ FIRST, before coding: review `ARCHITECTURE.md` (§1 stack + §4 code map & page layout)** — Joey's request.
+### ✅ `recordStart` DONE (Joey wrote it) — second helper for step 5
+```go
+const headerSize = 2
+func recordStart(pageBuffer []byte) int
+// empty page → headerSize; else last slot = getSlot(page, slotPosition(numSlots-1)) → Offset+Length
+```
+Lessons: `headerSize` is already inside slot 0's `Offset` (don't add it twice); `slotPosition(n)`
+doubles as "where existing slot n lives"; `Uint16(buf[pos:])` reads exactly the 2 bytes at `pos`;
+`pageBuffer` is the loaded page's bytes (slices share memory, so `put*` funcs return nothing).
 
-Open design question to start with: `slotPosition` says where the next *slot* goes (back of page).
-Where does the next *record* go (front of page), given the header only stores `numSlots`?
-(Hint: records pack in order; the most recent slot knows its record's `Offset` + `Length`.)
-Then: write record bytes → `putSlot` at `slotPosition` → bump `putNumSlots`; handle "page full".
-Then step 6 (get record by slot #), then the pack-N-records round-trip test.
+### ▶▶ RESUME HERE — step 5: `insertRecord` (stub exists, returns -1)
+**⚠️ FIRST, before coding: review `ARCHITECTURE.md` (§4 page layout)** — Joey's request.
+
+Open question: agree the signature. Claude's recommendation:
+`insertRecord(pageBuffer []byte, record []byte) (uint16, error)` → new slot # or "page full" error.
+Body: start := recordStart → fits? (start + len(record) must not pass slotPosition(numSlots)) →
+`copy` record bytes in → `putSlot` at `slotPosition(numSlots)` → `putNumSlots(numSlots+1)`.
+Then step 6 (`getRecord` by slot #), then the pack-N-records round-trip test.
 
 ---
 
