@@ -40,6 +40,20 @@ vs. an efficient key to physically order pages by.
 
 ---
 
+### `pageBuffer` *is* the page — the page number is how you fetch it
+Every slotted-page function takes `pageBuffer` first because it says *which page* to work on —
+with many pages in memory at once, `getSlot(page3, …)` and `getSlot(page12, …)` are the same
+function on different pages. Two ways to name a page: the **page number** is how the pager
+finds it on disk; `pageBuffer` is the page's actual 4096 bytes once loaded. And because a Go
+slice is a handle to shared bytes, `putSlot` edits the caller's page directly, so it
+returns nothing.
+
+### Slots are *placed* backwards but *written* forwards
+The slot directory grows from the end of the page toward the front, but each slot's own 4 bytes
+are still written left-to-right from its `position`. So the first slot starts at 4092 (filling
+4092–4095), not 4095. Records go at the front: the next one starts at the last slot's
+`Offset + Length`. No need to store a free-space pointer, since it can be calculated.
+
 ## Phase 3 — Storage / the Pager
 
 ### The page number is arbitrary *to the pager* — the index gives it meaning
