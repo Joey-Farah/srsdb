@@ -54,6 +54,14 @@ are still written left-to-right from its `position`. So the first slot starts at
 4092–4095), not 4095. Records go at the front: the next one starts at the last slot's
 `Offset + Length`. No need to store a free-space pointer, since it can be calculated.
 
+### Slices carry a hidden pointer, so no `&`/`*` is needed
+`pageBuffer` looks like an ordinary variable, but a slice is really a small `{pointer, length, capacity}`
+struct. Passing it copies that small struct, and the copy's pointer still aims at the same bytes, so a
+function that writes through it changes the caller's page. An array (`[4096]byte`) has no hidden pointer
+and gets copied in full. Slices and maps share their data when passed; plain ints, structs and arrays are
+copied. Explicit pointers (`*Pager`, `&x`) are for sharing or changing a caller's value, or avoiding big
+copies. Local variables inside a function never need them.
+
 ## Phase 3 — Storage / the Pager
 
 ### The page number is arbitrary *to the pager* — the index gives it meaning

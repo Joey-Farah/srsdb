@@ -36,6 +36,9 @@ Every example is lifted from real rslp code (`main.go`, `storage/`).
   `PutUint16(buf[pos:], slot.Offset)` — values, never retyped types.
 - **`buf[pos:+2]` ≠ `buf[pos+2:]`.** The first is `buf[pos:2]` (unary `+2` is just `2`).
 - **`ReadAt` returns a byte count, not the data.** The bytes land in the buffer you passed in.
+- **Slices (and maps) share data when passed.** A slice carries a hidden pointer, so a function that
+  writes into a `[]byte` param changes the caller's bytes, with no `&`/`*` needed. Arrays (`[4096]byte`),
+  ints and structs are copied. To let a function change those, pass a pointer (`&x` / `*int`) or return the new value.
 - **`os.Open` is read-only and won't create a file.** Use
   `os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0644)` to read + write + create.
 
