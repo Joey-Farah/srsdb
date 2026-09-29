@@ -253,14 +253,17 @@ Lessons: `headerSize` is already inside slot 0's `Offset` (don't add it twice); 
 doubles as "where existing slot n lives"; `Uint16(buf[pos:])` reads exactly the 2 bytes at `pos`;
 `pageBuffer` is the loaded page's bytes (slices share memory, so `put*` funcs return nothing).
 
-### ▶▶ RESUME HERE — step 5: `insertRecord` (stub exists, returns -1)
-**⚠️ FIRST, before coding: review `ARCHITECTURE.md` (§4 page layout)** — Joey's request.
+### ▶▶ RESUME HERE — step 5: `insertRecord`
+**Start with 2–3 recall questions (see the CONTEXT.md tutoring protocol), not a recap.**
 
-Open problems for Joey to work out (don't pre-solve here):
-- What should `insertRecord` take in and return?
-- How does it know whether a record fits on the page?
-- In what order must it update the page?
-Then step 6 (`getRecord` by slot #), then the pack-N-records round-trip test.
+Done (uncommitted, in `slotted.go`): renamed `pageBuffer` → `page`; signature agreed:
+`insertRecord(page []byte, newRecord []byte) (newSlotNumber uint16, err error)`.
+⚠️ Body is a non-compiling placeholder, so `go build ./...` fails until it's written.
+
+Where we stopped: Joey identified the error case, a record that doesn't fit, where the records and slots
+would overlap and corrupt the page. It must be checked **before** writing anything.
+Open question: using the two position helpers, what do you compare to know whether it fits?
+Then: the rest of the body (order of updates), step 6 `getRecord`, then Joey-written round-trip test.
 
 ---
 
