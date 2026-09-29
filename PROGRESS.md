@@ -256,10 +256,10 @@ doubles as "where existing slot n lives"; `Uint16(buf[pos:])` reads exactly the 
 ### ▶▶ RESUME HERE — step 5: `insertRecord` (stub exists, returns -1)
 **⚠️ FIRST, before coding: review `ARCHITECTURE.md` (§4 page layout)** — Joey's request.
 
-Open question: agree the signature. Claude's recommendation:
-`insertRecord(pageBuffer []byte, record []byte) (uint16, error)` → new slot # or "page full" error.
-Body: start := recordStart → fits? (start + len(record) must not pass slotPosition(numSlots)) →
-`copy` record bytes in → `putSlot` at `slotPosition(numSlots)` → `putNumSlots(numSlots+1)`.
+Open problems for Joey to work out (don't pre-solve here):
+- What should `insertRecord` take in and return?
+- How does it know whether a record fits on the page?
+- In what order must it update the page?
 Then step 6 (`getRecord` by slot #), then the pack-N-records round-trip test.
 
 ---
