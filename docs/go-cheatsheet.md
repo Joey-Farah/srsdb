@@ -2,6 +2,22 @@
 
 Every example is lifted from real rslp code (`main.go`, `storage/`).
 
+## rslp vocabulary (mirrors `CONTEXT.md`)
+
+| Term | Means | Unit |
+|---|---|---|
+| **page** | one fixed 4096-byte block; in code, the `page []byte` loaded into memory | 4096 bytes |
+| **page number** | which page in the file (page `k` lives at byte `k × 4096`) | a count |
+| **header** | bytes 0–1 of a page; holds `numSlots` | 2 bytes |
+| **record** | a row's actual bytes, packed in from the **front** of the page | variable |
+| **slot** | a 4-byte `{Offset, Length}` entry at the **back** of the page that points to one record | 4 bytes |
+| **number** | *which one*: slot #0, #1, #2…; `numSlots` = how many | a count |
+| **position** | *where* something is inside the page | byte, 0–4095 |
+| **Offset** | slot field: the byte position where its record starts | byte |
+| **Length** | slot field: how many bytes its record is | bytes |
+| **end** | `start + length` = the first byte **after** something (exclusive, like `page[a:b]`) | byte |
+| **size** (`PageSize`) | 4096, one past the last byte (4095); subtract from this, check against 4095 | bytes |
+
 ## Syntax
 
 | Concept | Example |
