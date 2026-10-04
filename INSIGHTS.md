@@ -62,6 +62,13 @@ and gets copied in full. Slices and maps share their data when passed; plain int
 copied. Explicit pointers (`*Pager`, `&x`) are for sharing or changing a caller's value, or avoiding big
 copies. Local variables inside a function never need them.
 
+### Update the header last: the commit point
+`insertRecord` writes the record bytes and the new slot first, and bumps `numSlots` **last**. If anything
+fails partway, the header still reports the old count, so the half-written bytes just sit in free space
+where nothing reads them. Bumping the count is the single step that makes the new record "real."
+Databases call this a **commit point**: do the work, then flip one small value to make it visible.
+I reasoned my way to it before I knew the name.
+
 ## Phase 3 — Storage / the Pager
 
 ### The page number is arbitrary *to the pager* — the index gives it meaning
