@@ -42,6 +42,7 @@ func getSlot(page []byte, position int) Slot {
 	}
 }
 
+// Updating the header with the number of slots
 func putNumSlots(page []byte, numSlots uint16) {
 	binary.LittleEndian.PutUint16(page, numSlots)
 }
@@ -71,17 +72,33 @@ func recordStart(page []byte) int {
 // Calling recordStart gives us the position of the new record, so we shouldn't need to take it in
 // Error handling needs to make sure the location its writing bytes to doesn't already contain anything written
 // if the size of the bytes being written is greater than the size of the remaining unwritten bytes, then throw an error
+
 func insertRecord(page []byte, newRecord []byte) (newSlotNumber uint16, err error) {
 	//grabs index of the new slot (just the number of slots on the page)
 	newSlotNumber = getNumSlots(page)
+	newSlotPosition := slotPosition(newSlotNumber)
 
 	newRecordStart := recordStart(page)
 	newRecordEndPosition := newRecordStart + len(newRecord)
-	newSlotPosition := slotPosition(newSlotNumber)
 
 	// end = first byte AFTER the record, so end == slot position is an exact fit; only end > slot position overlaps
-	if newRecordEndPosition > int(newSlotPosition) {
-		return newSlotNumber, fmt.Errorf("Page out of space.")
+	if newRecordEndPosition > newSlotPosition {
+		return 0, fmt.Errorf("page out of space.")
 	}
-	return newSlotNumber, err
+
+	// inserting new slotss
+	newSlot := Slot{
+		Offset: uint16(newRecordStart),
+		Length: uint16(len(newRecord)),
+	}
+	putSlot(page, newSlotPosition, newSlot)
+
+	// copying the newRecord into the page
+	copy(page[newRecordStart:], newRecord)
+
+	//updating number of slots in header
+	putNumSlots(page, newSlotNumber+1)
+
+	//returning nil since an error would've been caught earlier and returned
+	return newSlotNumber, nil
 }
