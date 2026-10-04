@@ -12,7 +12,7 @@
 6. SQL parser (recursive descent) → AST → query plan from the operators.
 7. (Optional) Make analytical queries fast — columnar storage / zone maps (OLTP vs OLAP).
 
-## Overall progress — ~15% (effort-weighted; excludes optional Ph7)
+## Overall progress — ~33% (effort-weighted; excludes optional Ph7)
 Phases are NOT equal size — the engine core (Ph3–6) is the bulk. Weighting reflects that.
 
 | Phase | Weight | Status | Done |
@@ -20,10 +20,10 @@ Phases are NOT equal size — the engine core (Ph3–6) is the bulk. Weighting r
 | Ph1 parse `.slp` → `Game` | 8% | ✅ complete | 8% |
 | Ph2 flat-file ingest + read-back | 7% | ✅ complete | 7% |
 | Ph3 pages + pager | 20% | 🟡 core done (Open/Write/Read + test) — cache next | 14% |
-| Ph4 B+tree | 25% | ⬜ not started | 0% |
+| Ph4 B+tree | 25% | 🟡 slotted page: insert done; getRecord + test next | 4% |
 | Ph5 operators | 18% | ⬜ not started | 0% |
 | Ph6 SQL parser → plan | 22% | ⬜ not started | 0% |
-| **Total** | **100%** | | **~29%** |
+| **Total** | **100%** | | **~33%** |
 
 > Update the % and status as phases close. The weighting is a rough planning estimate,
 > not a precise measure — the point is to see the engine core (Ph3–6, 85% of the work) is
@@ -253,17 +253,14 @@ Lessons: `headerSize` is already inside slot 0's `Offset` (don't add it twice); 
 doubles as "where existing slot n lives"; `Uint16(buf[pos:])` reads exactly the 2 bytes at `pos`;
 `pageBuffer` is the loaded page's bytes (slices share memory, so `put*` funcs return nothing).
 
-### ▶▶ RESUME HERE — step 5: `insertRecord`
-**Start with 2–3 recall questions (see the CONTEXT.md tutoring protocol), not a recap.**
+### ✅ `insertRecord` DONE (Joey wrote it) — `6b5c480`
+Space check before any write (`end > slotPosition` → error; end is exclusive) → write slot →
+`copy(page[start:], newRecord)` → `putNumSlots(n+1)` **last** (commit point). Returns the new slot #.
 
-Done (uncommitted, in `slotted.go`): renamed `pageBuffer` → `page`; signature agreed:
-`insertRecord(page []byte, newRecord []byte) (newSlotNumber uint16, err error)`.
-⚠️ Body is a non-compiling placeholder, so `go build ./...` fails until it's written.
-
-Where we stopped: Joey identified the error case, a record that doesn't fit, where the records and slots
-would overlap and corrupt the page. It must be checked **before** writing anything.
-Open question: using the two position helpers, what do you compare to know whether it fits?
-Then: the rest of the body (order of updates), step 6 `getRecord`, then Joey-written round-trip test.
+### ▶▶ RESUME HERE — step 6: `getRecord` (read a record back by slot number)
+**Start with 2–3 recall questions (CONTEXT.md tutoring protocol), not a recap.**
+Open problems for Joey: what goes in, what comes out, what can go wrong.
+Then: Joey-written round-trip test (pack N records, read each back by slot #, compare bytes).
 
 ---
 
