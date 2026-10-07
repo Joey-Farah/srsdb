@@ -83,7 +83,7 @@ func insertRecord(page []byte, newRecord []byte) (newSlotNumber uint16, err erro
 
 	// end = first byte AFTER the record, so end == slot position is an exact fit; only end > slot position overlaps
 	if newRecordEndPosition > newSlotPosition {
-		return 0, fmt.Errorf("page out of space.")
+		return 0, fmt.Errorf("page out of space")
 	}
 
 	// inserting new slotss
@@ -101,4 +101,16 @@ func insertRecord(page []byte, newRecord []byte) (newSlotNumber uint16, err erro
 
 	//returning nil since an error would've been caught earlier and returned
 	return newSlotNumber, nil
+}
+
+func getRecord(page []byte, slotNumber uint16) (record []byte, err error) {
+	numSlots := getNumSlots(page)
+	if numSlots <= slotNumber {
+		return nil, fmt.Errorf("slot does not exist")
+	}
+	currentSlot := getSlot(page, slotPosition(slotNumber))
+	recordOffset := currentSlot.Offset
+	recordLength := currentSlot.Length
+	record = page[recordOffset : recordOffset+recordLength]
+	return record, nil
 }
