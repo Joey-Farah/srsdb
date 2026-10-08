@@ -257,10 +257,15 @@ doubles as "where existing slot n lives"; `Uint16(buf[pos:])` reads exactly the 
 Space check before any write (`end > slotPosition` → error; end is exclusive) → write slot →
 `copy(page[start:], newRecord)` → `putNumSlots(n+1)` **last** (commit point). Returns the new slot #.
 
-### ▶▶ RESUME HERE — step 6: `getRecord` (read a record back by slot number)
-**Start with 2–3 recall questions (CONTEXT.md tutoring protocol), not a recap.**
-Open problems for Joey: what goes in, what comes out, what can go wrong.
-Then: Joey-written round-trip test (pack N records, read each back by slot #, compare bytes).
+### ✅ `getRecord` DONE (Joey wrote it) — `b8dd541`
+Validates `slotNumber < numSlots` first (otherwise it silently returns garbage or panics), then
+`getSlot(page, slotPosition(n))` → `page[Offset : Offset+Length]`. The returned slice shares memory with the page.
+
+### ▶▶ RESUME HERE — step 7: Joey writes `storage/slotted_test.go` (file started)
+Agreed plan: happy-path round trip first. Insert a few hand-made byte records of **different lengths and contents**,
+check the returned slot numbers, then read each back and compare (want/got, like `pager_test.go`).
+Ask Joey to **predict** pass/fail before running `go test ./storage -run <Name> -v`.
+Then two separate error tests: page full (`insertRecord`), slot doesn't exist (`getRecord`).
 
 ---
 
