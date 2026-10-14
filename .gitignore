@@ -9,3 +9,7 @@ data/
 
 # Root build artifacts (regenerable via `go build`)
 /main
+
+# Local machine / personal tool settings
+.DS_Store
+.claude/settings.local.json*

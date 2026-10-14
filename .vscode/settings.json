@@ -1,0 +1,14 @@
+{
+  // Ghost-text completions (Copilot or any other AI inline suggestion)
+  "editor.inlineSuggest.enabled": false,
+  "github.copilot.enable": { "*": false },
+
+  // IntelliSense popup that appears as you type
+  "editor.quickSuggestions": { "other": false, "comments": false, "strings": false },
+  "editor.suggestOnTriggerCharacters": false,
+  "editor.wordBasedSuggestions": "off",
+  "editor.parameterHints.enabled": false,
+
+  // Optional: stop gopls from adding/removing imports for you on save
+  "editor.codeActionsOnSave": { "source.organizeImports": "never" }
+}
